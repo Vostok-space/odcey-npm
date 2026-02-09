@@ -1,15 +1,23 @@
 {
   "name": "odcey",
-  "version": "0.2.0",
+  "version": "0.3.2",
   "description": "Converter to plain text Oberon document binary format, used by the BlackBox Component Builder.",
-  "main": "odcey.js",
-  "scripts": {
-    "test": "./odcey.js version"
-  },
-  "keywords": ["Oberon", "BlackBox", "odc"],
+  "keywords": [
+    "Oberon",
+    "BlackBox",
+    "odc"
+  ],
   "author": "ComDivByZero",
   "license": "Apache-2.0",
-  "bugs": {"url": "https://github.com/Vostok-space/odcey/issues"},
+  "bugs": {
+    "url": "https://github.com/Vostok-space/odcey/issues"
+  },
   "homepage": "https://github.com/Vostok-space/odcey",
-  "bin": {"odcey": "./odcey.js"}
+  "main": "odcey.js",
+  "scripts": {
+    "odcey": "./odcey.js"
+  },
+  "bin": {
+    "odcey": "./odcey.js"
+  }
 }
