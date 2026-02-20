@@ -1,4 +1,18 @@
 #!/usr/bin/env node
+/* Copyright 2018-2024 ComdivByZero
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 var o7;
 (function(o7) { "use strict";
 
@@ -1529,6 +1543,7 @@ function WrapIn() {
 }
 
 WrapOut();
+o7.assert(module.out != null);
 WrapIn();
 
 return module;
@@ -1783,6 +1798,7 @@ function OpenOut() {
 
     if (out == null) {
         s = Files.out;
+        o7.assert(s != null);
         ignore = Platform.Windows && Windows.SetConsoleOutputCP(Windows.Utf8);
     } else {
         s = Stream.OpenOut(out);
@@ -1920,6 +1936,8 @@ var CarRet = 0x0D;
 module.CarRet = CarRet;
 var Idle = 0x16;
 module.Idle = Idle;
+var Escape = 0x1B;
+module.Escape = Escape;
 var Space = 0x20;
 module.Space = Space;
 var DQuote = 0x22;
@@ -4812,7 +4830,7 @@ var Windows1251 = o7.import.OldCharsetWindows1251;
 var module = {};
 o7.export.Odc = module;
 
-var Version = [48,46,100,46,51,0];
+var Version = [48,46,52,0];
 module.Version = Version;
 
 var Nil = 128;
@@ -4866,7 +4884,11 @@ var SkipOberonComment = 1;
 module.SkipOberonComment = SkipOberonComment;
 var InputWindows1251 = 2;
 module.InputWindows1251 = InputWindows1251;
-var LastOption = 2;
+var LastCharNewLine = 3;
+module.LastCharNewLine = LastCharNewLine;
+var WriteDescriptors = 4;
+module.WriteDescriptors = WriteDescriptors;
+var LastOption = 4;
 module.LastOption = LastOption;
 
 var StructDeepMax = 256;
@@ -5103,8 +5125,8 @@ function ReadEndNext(in_, next, next__ai) {
     var ok;
     var comment = o7.array(1);
 
-    ok = ReadNext(in_, comment, 0, next, next__ai) && (o7.cmp(next.at(next__ai), 0) == 0);
-    if (ok && !(comment[0] % 2 != 0)) {
+    ok = ReadNext(in_, comment, 0, next, next__ai);
+    if (ok && (o7.cmp(next.at(next__ai), 0) == 0) && !(comment[0] % 2 != 0)) {
         next.put(next__ai,  - 1);
     }
     return ok;
@@ -5455,7 +5477,7 @@ module.ReadDoc = ReadDoc;
 function Code(char_) {
     var code;
 
-    if (0x0D == char_) {
+    if ((0x0D == char_) || (0x0E == char_)) {
         code = 0x0A;
     } else if (((0xFF & 0x8B) > (0xFF & char_)) || ((0xFF & char_) > (0xFF & 0x91))) {
         code = char_;
@@ -5561,32 +5583,43 @@ function WriteObject(out, ctx, types, obj) {
 
         ok = true;
         while ((ps != null) && ok) {
-            if (ps.kind == PieceView) {
-                if ((o7.cmp(ctx.opt.cmdLen, 0) > 0) && (ps.view[0] != null) && (o7.cmp(ps.view[0].type, types.devCommandersStdView[0]) == 0)) {
-                    ok = !IsNeedPrint(ctx) || (o7.cmp(ctx.opt.cmdLen, Stream.WriteChars(out, ctx.opt.commanderReplacement, 0, ctx.opt.cmdLen)) == 0);
-                } else if ((ps.view[0] != null) && !(0 != ( (1 << SkipEmbeddedView) & ctx.opt.set[0]))) {
-                    ok = WriteObject(out, ctx, types, ps.view[0]);
-                } else if (IsNeedPrint(ctx)) {
-                    ok = 1 == Stream.WriteChars(out, [32,0], 0, 1);
-                }
-            } else {
+            if (ps.kind != PieceView) {
                 ok = WritePiece(out, ctx, ps);
+            } else if (ps.view[0] == null) {
+                ok = !IsNeedPrint(ctx) || (1 == Stream.WriteChars(out, [32,0], 0, 1));
+            } else if ((o7.cmp(ps.view[0].type, types.devCommandersStdView[0]) != 0) || (o7.cmp(ctx.opt.cmdLen, 0) == 0)) {
+                ok = (0 != ( (1 << SkipEmbeddedView) & ctx.opt.set[0])) || WriteObject(out, ctx, types, ps.view[0]);
+            } else {
+                ok = !IsNeedPrint(ctx) || (o7.cmp(ctx.opt.cmdLen, Stream.WriteChars(out, ctx.opt.commanderReplacement, 0, ctx.opt.cmdLen)) == 0);
             }
             ps = ps.next;
         }
         return ok;
     }
 
+    function WriteDesc(out, types, type) {
+        var name;
+        var l;
+
+        name = o7.inited(types.desc.at(type).name[0]);
+        l = Charz.CalcLen(types.names, name);
+        return (1 == Stream.WriteChars(out, [60,0], 0, 1)) && (l == Stream.WriteChars(out, types.names, name, l)) && (1 == Stream.WriteChars(out, [62,0], 0, 1));
+    }
+
     if (o7.cmp(obj.type, types.textModelsStdModel[0]) == 0) {
         ok = WritePieces(out, ctx, obj.pieces[0], types);
-    } else if (obj.first[0] != null) {
+    } else {
+        if (0 != ( (1 << WriteDescriptors) & ctx.opt.set[0])) {
+            ok = WriteDesc(out, types, obj.type);
+            ctx.prevChar = 0x3E;
+        } else {
+            ok = true;
+        }
         struct_ = obj.first[0];
-        do {
+        while (ok && (struct_ != null)) {
             ok = (struct_.object[0] == null) || WriteObject(out, ctx, types, struct_.object[0]);
             struct_ = struct_.next[0];
-        } while (!(!ok || (struct_ == null)));
-    } else {
-        ok = true;
+        }
     }
     return ok;
 }
@@ -5600,15 +5633,21 @@ module.DefaultOptions = DefaultOptions;
 
 function PrintDoc(out, doc, opt) {
     var ctx = new PrintContext ();
+    var ok;
+    var ignore;
 
     o7.assert((o7.inited(opt.set[0]) & ~o7.set(0, LastOption)) == 0);
 
     ctx.opt.assign(opt);
     ctx.opt.cmdLen = Charz.CalcLen(opt.commanderReplacement, 0);
     ctx.opt.tabLen = Charz.CalcLen(opt.tab, 0);
-    ctx.prevChar =  - 1;
+    ctx.prevChar = 0x0A;
     ctx.commentsDeep = 0;
-    return (doc.struct_.object[0] == null) || WriteObject(out, ctx, doc.types, doc.struct_.object[0]);
+    ok = (doc.struct_.object[0] == null) || WriteObject(out, ctx, doc.types, doc.struct_.object[0]);
+    if (ok && (o7.cmp(ctx.prevChar, 0x0A) != 0) && (0 != ( (1 << LastCharNewLine) & opt.set[0]))) {
+        ignore = 1 == Stream.WriteChars(out, [10,0], 0, 1);
+    }
+    return ok;
 }
 module.PrintDoc = PrintDoc;
 
@@ -5813,7 +5852,7 @@ var Platform = o7.import.Platform;
 var module = {};
 o7.export.odcey = module;
 
-var Version = [48,46,51,46,50,0];
+var Version = [48,46,52,0];
 module.Version = Version;
 
 var McConfig = [46,99,111,110,102,105,103,47,109,99,47,109,99,46,101,120,116,46,105,110,105,0];
@@ -5826,6 +5865,7 @@ function Help(cli) {
     var commanderTo = o7.array(42);
     var skipEmbedded = o7.array(42);
     var skipComment = o7.array(42);
+    var writeDescs = o7.array(42);
     var tab = o7.array(42);
     var windows1251 = o7.array(42);
 
@@ -5833,13 +5873,14 @@ function Help(cli) {
     log.n();
     log.sn([85,115,97,103,101,58,0]);
     if (cli) {
-        log.sn([32,48,46,32,111,100,99,101,121,32,116,101,120,116,32,32,91,105,110,112,117,116,32,91,111,117,116,112,117,116,93,93,32,123,32,111,112,116,105,111,110,115,32,125,0]);
-        log.sn([32,32,32,32,111,100,99,101,121,32,91,116,101,120,116,93,32,105,110,112,117,116,32,91,111,117,116,112,117,116,93,32,32,123,32,111,112,116,105,111,110,115,32,125,0]);
-        log.sn([32,49,46,32,111,100,99,101,121,32,103,105,116,32,32,32,32,91,100,105,114,93,0]);
-        log.sn([32,50,46,32,111,100,99,101,121,32,109,99,0]);
+        log.sn([32,48,46,32,111,100,99,101,121,32,32,116,101,120,116,32,32,91,105,110,112,117,116,32,91,111,117,116,112,117,116,93,93,32,123,32,111,112,116,105,111,110,115,32,125,0]);
+        log.sn([32,32,32,32,111,100,99,101,121,32,91,116,101,120,116,93,32,32,105,110,112,117,116,32,91,111,117,116,112,117,116,93,32,32,123,32,111,112,116,105,111,110,115,32,125,0]);
+        log.sn([32,49,46,32,111,100,99,101,121,32,32,103,105,116,32,32,32,91,100,105,114,93,0]);
+        log.sn([32,50,46,32,111,100,99,101,121,32,32,109,99,0]);
         o7.strcpy(commanderTo, [45,99,111,109,109,97,110,100,101,114,45,116,111,32,60,115,116,114,62,0]);
         o7.strcpy(skipEmbedded, [45,115,107,105,112,45,101,109,98,101,100,100,101,100,45,118,105,101,119,0]);
         o7.strcpy(skipComment, [45,115,107,105,112,45,99,111,109,109,101,110,116,32,32,32,32,32,32,0]);
+        o7.strcpy(writeDescs, [45,119,114,105,116,101,45,100,101,115,99,114,105,112,116,111,114,115,32,0]);
         o7.strcpy(windows1251, [45,105,110,112,117,116,45,119,105,110,100,111,119,115,49,50,53,49,32,0]);
         o7.strcpy(tab, [45,116,97,98,32,60,115,116,114,62,32,32,32,32,32,32,32,32,32,0]);
     } else {
@@ -5848,7 +5889,8 @@ function Help(cli) {
         o7.strcpy(commanderTo, [111,100,99,101,121,46,99,111,109,109,97,110,100,101,114,84,111,40,115,116,114,41,32,32,32,32,32,32,32,32,32,32,32,32,0]);
         o7.strcpy(skipEmbedded, [111,100,99,101,121,46,111,112,116,40,123,79,100,99,46,83,107,105,112,69,109,98,101,100,100,101,100,86,105,101,119,32,125,41,0]);
         o7.strcpy(skipComment, [32,32,32,32,32,32,32,32,32,32,123,79,100,99,46,83,107,105,112,79,98,101,114,111,110,67,111,109,109,101,110,116,125,32,0]);
-        o7.strcpy(windows1251, [32,32,32,32,32,32,32,32,32,32,123,79,100,99,46,73,110,112,117,116,87,105,110,100,111,119,115,49,50,53,49,125,32,32,0]);
+        o7.strcpy(writeDescs, [32,32,32,32,32,32,32,32,32,32,123,79,100,99,46,87,114,105,116,101,68,101,115,99,114,105,112,116,111,114,115,32,125,32,0]);
+        o7.strcpy(windows1251, [32,32,32,32,32,32,32,32,32,32,123,79,100,99,46,73,110,112,117,116,87,105,110,100,111,119,115,49,50,53,49,32,125,32,0]);
         o7.strcpy(tab, [111,100,99,101,121,46,116,97,98,40,115,116,114,41,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,0]);
     }
     log.n();
@@ -5863,6 +5905,9 @@ function Help(cli) {
     log.s(skipComment);
     log.sn([32,32,115,107,105,112,115,32,40,42,32,79,98,101,114,111,110,32,99,111,109,109,101,110,116,115,32,42,41,32,0]);
     log.s([32,32,32,0]);
+    log.s(writeDescs);
+    log.sn([32,32,112,114,105,110,116,32,100,101,115,99,114,105,112,116,111,114,115,32,111,102,32,118,105,101,119,115,32,0]);
+    log.s([32,32,32,0]);
     log.s(windows1251);
     log.sn([32,32,115,101,116,32,99,104,97,114,115,101,116,32,87,105,110,100,111,119,115,45,49,50,53,49,32,105,110,115,116,101,97,100,32,111,102,32,76,97,116,105,110,45,49,0]);
     log.s([32,32,32,0]);
@@ -5875,11 +5920,12 @@ function Help(cli) {
     log.sn([50,46,32,67,111,110,102,105,103,117,114,101,32,118,105,101,119,101,114,32,111,102,32,109,105,100,110,105,103,104,116,32,99,111,109,109,97,110,100,101,114,0]);
 }
 
-function Text(input, output, opt) {
+function Text(input, output, opts) {
     var ok;
     var in_ = o7.array(1);
     var out = o7.array(1);
     var doc = o7.array(1);
+    var opt = new Odc.Options ();
 
     if (o7.strcmp(input, [0]) != 0) {
         in_[0] = File.OpenIn(input);
@@ -5895,8 +5941,10 @@ function Text(input, output, opt) {
         if (!ok) {
             log.sn([69,114,114,111,114,32,100,117,114,105,110,103,32,112,97,114,115,105,110,103,32,105,110,112,117,116,32,97,115,32,46,111,100,99,0]);
         } else {
+            opt.assign(opts);
             if (o7.strcmp(output, [0]) == 0) {
                 out[0] = VDefaultIO.OpenOut();
+                opt.set.incl(0, Odc.LastCharNewLine);
             } else {
                 out[0] = File.OpenOut(output);
             }
@@ -5970,7 +6018,7 @@ function AddToGit(gitDir) {
         if (!ok) {
             log.sn([67,97,110,32,110,111,116,32,101,100,105,116,32,46,103,105,116,47,105,110,102,111,47,97,116,116,114,105,98,117,116,101,115,0]);
         } else {
-            ok = (OsExec.Do([103,105,116,32,99,111,110,102,105,103,32,100,105,102,102,46,99,112,46,98,105,110,97,114,121,32,116,114,117,101,0]) == 0) && (OsExec.Do([103,105,116,32,99,111,110,102,105,103,32,100,105,102,102,46,99,112,46,116,101,120,116,99,111,110,118,32,39,111,100,99,101,121,32,116,101,120,116,32,60,39,0]) == 0);
+            ok = (OsExec.Do([103,105,116,32,99,111,110,102,105,103,32,100,105,102,102,46,99,112,46,98,105,110,97,114,121,32,116,114,117,101,0]) == 0) && (OsExec.Do([103,105,116,32,99,111,110,102,105,103,32,100,105,102,102,46,99,112,46,116,101,120,116,99,111,110,118,32,39,111,100,99,101,121,32,116,101,120,116,32,45,119,114,105,116,101,45,100,101,115,99,114,105,112,116,111,114,115,32,60,39,0]) == 0);
             if (!ok) {
                 log.sn([67,97,110,32,110,111,116,32,115,101,116,117,112,32,103,105,116,32,116,101,120,116,99,111,110,118,0]);
             }
@@ -6132,7 +6180,7 @@ function Cli() {
     } else if (o7.strcmp(args[0], [104,101,108,112,0]) == 0) {
         Help(true);
     } else if (o7.strcmp(args[0], [118,101,114,115,105,111,110,0]) == 0) {
-        log.sn([48,46,51,46,50,0]);
+        log.sn([48,46,52,0]);
     } else if ((o7.strcmp(args[0], [116,101,120,116,0]) == 0) || (Charz.SearchChar(args[0], i, 0, 0x2E))) {
         i[0] = o7.bti(o7.strcmp(args[0], [116,101,120,116,0]) == 0);
         if (o7.cmp(i[0], 1) == 0) {
@@ -6142,7 +6190,7 @@ function Cli() {
         argInd = 0;
         o7.strcpy(tabOpt, [0]);
         while (o7.inited(ok[0]) && (o7.cmp(i[0], CLI.count) < 0)) {
-            if (!Option(i, 0, [45,99,111,109,109,97,110,100,101,114,45,116,111,0], options.commanderReplacement, ok, 0) && !BoolOption(i, 0, [45,115,107,105,112,45,101,109,98,101,100,100,101,100,45,118,105,101,119,0], Odc.SkipEmbeddedView, options.set, 0, ok, 0) && !BoolOption(i, 0, [45,115,107,105,112,45,99,111,109,109,101,110,116,0], Odc.SkipOberonComment, options.set, 0, ok, 0) && !BoolOption(i, 0, [45,105,110,112,117,116,45,119,105,110,100,111,119,115,49,50,53,49,0], Odc.InputWindows1251, options.set, 0, ok, 0) && !Option(i, 0, [45,116,97,98,0], tabOpt, ok, 0) && (argInd < 2)) {
+            if (!Option(i, 0, [45,99,111,109,109,97,110,100,101,114,45,116,111,0], options.commanderReplacement, ok, 0) && !BoolOption(i, 0, [45,115,107,105,112,45,101,109,98,101,100,100,101,100,45,118,105,101,119,0], Odc.SkipEmbeddedView, options.set, 0, ok, 0) && !BoolOption(i, 0, [45,115,107,105,112,45,99,111,109,109,101,110,116,0], Odc.SkipOberonComment, options.set, 0, ok, 0) && !BoolOption(i, 0, [45,119,114,105,116,101,45,100,101,115,99,114,105,112,116,111,114,115,0], Odc.WriteDescriptors, options.set, 0, ok, 0) && !BoolOption(i, 0, [45,105,110,112,117,116,45,119,105,110,100,111,119,115,49,50,53,49,0], Odc.InputWindows1251, options.set, 0, ok, 0) && !Option(i, 0, [45,116,97,98,0], tabOpt, ok, 0) && (argInd < 2)) {
                 len[0] = 0;
                 o7.assert(CLI.Get(args.at(argInd), len, 0, i[0]));
                 i.inc(0, 1);
